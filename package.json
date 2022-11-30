@@ -1,0 +1,24 @@
+{
+  "name": "cyber-scan",
+  "version": "0.0.1",
+  "description": "Automation for Hacking Tools",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Leetcore/cyber-scan.git"
+  },
+  "type": "module",
+  "author": "1337core",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Leetcore/cyber-scan/issues"
+  },
+  "homepage": "https://github.com/Leetcore/cyber-scan#readme",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
