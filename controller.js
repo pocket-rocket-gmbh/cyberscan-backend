@@ -16,7 +16,7 @@ export default {
         switch (inputCommand) {
             case "start":
                 if (task.status == "running") {
-                    console.log(`Scan for ${task.hostname} is already started...`)
+                    console.log(`Scan for ${task.hostname} has already started...`)
                     return "Task is already running...";
                 }
                 if (!task) {

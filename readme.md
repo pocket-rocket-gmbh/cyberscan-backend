@@ -3,9 +3,8 @@ This is the API for the Cyberscan. It manages the user database and the
 running scans.
 
 ## Install
-You need cyberscan and cyberscan-frontend to run this!
+You need cyberscan-frontend to run this!
 
-* cyberscan -> Python vuln scanner automation
 * cyberscan-backend -> API and database
 * cyberscan-frontend -> UI and fancy stuff
 
@@ -21,6 +20,5 @@ npm start
 
 ## TODO
 * [ ] API to start scans
-* [ ] parse url -> put in python scanner
-* [ ] start python scanner
+* [ ] Start tools in shell
 * [ ] parse and format result as json

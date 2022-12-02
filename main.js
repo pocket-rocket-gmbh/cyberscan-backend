@@ -1,6 +1,7 @@
 import fs from 'fs'
 import express from 'express'
 const app = express()
+import { XMLParser } from 'fast-xml-parser'
 import controller from './controller.js'
 
 app.get(`/actions/:inputDomain/:inputCommand`,
@@ -8,7 +9,6 @@ app.get(`/actions/:inputDomain/:inputCommand`,
         const inputDomain = "https://" + req.params.inputDomain
         const hostname = new URL(inputDomain).hostname
         const inputCommand = req.params.inputCommand
-
         res.send(controller.startTasks(hostname, inputCommand))
     }
 )
@@ -17,40 +17,87 @@ app.get(`/reports/:inputDomain`,
     (req, res) => {
         const inputDomain = "https://" + req.params.inputDomain
         const hostname = new URL(inputDomain).hostname
+        let subs_array = []
+        let hosts_array = []
+        let panels_array = []
+        let nmap_xml = ""
 
         try {
-            const hosts_array = fs.readFileSync(
-                `../cyberscan/scans/${hostname}/hosts.txt`,
+            subs_array = fs.readFileSync(
+                `./scans/${hostname}/subfinder.txt`,
                 { encoding: 'utf8', flag: 'r' })
                 .split("\n")
                 .filter(element => element.length > 0)
-            // const panels_array = fs.readFileSync(`../cyberscan/scans/${hostname}/panels.txt`, { encoding: 'utf8', flag: 'r' }).split("\n")
-
-            // build objects
-            const hosts = hosts_array.map(host => {
-                return {
-                    hostname: host
-                }
-            })
-            // const panels = panels_array.map(panel => {
-            //     // split infos: 
-            //     return {
-            //         hostname: panel
-            //     }
-            // })
-
-            // combine json
-            const result = {
-                hosts: hosts,
-                // panels: panels
-            }
-
-            res.json(result)
         } catch (e) {
-            console.warn(`Files for ${hostname} not found or not ready yet...`)
-            res.json({})
+            console.log(e)
+            console.log(`subfinder.txt for ${hostname} not ready yet...`)
         }
 
+        try {
+            hosts_array = fs.readFileSync(
+                `./scans/${hostname}/hosts.txt`,
+                { encoding: 'utf8', flag: 'r' })
+                .split("\n")
+                .filter(element => element.length > 0)
+                .filter(element => element.length > 0)
+        } catch (e) {
+            console.log(`hosts.txt for ${hostname} not ready yet...`)
+        }
+
+        try {
+            panels_array = fs.readFileSync(
+                `./scans/${hostname}/panels.txt`,
+                { encoding: 'utf8', flag: 'r' })
+                .split("\n")
+                .filter(element => element.length > 0)
+        } catch (e) {
+            console.log(`panels.txt for ${hostname} not ready yet...`)
+        }
+
+        // xml
+        try {
+            nmap_xml = fs.readFileSync(
+                `./scans/${hostname}/nmap.xml`,
+                { encoding: 'utf8', flag: 'r' }
+            )
+        } catch (e) {
+            console.log(`nmap.txt for ${hostname} not ready yet...`)
+        }
+
+        try {
+            if (nmap_xml.length > 0) {
+                const parser = new XMLParser()
+                const json = parser.parse(nmap_xml)
+            }
+        } catch (e) {
+            console.warn(`nmap.xml parsing for ${hostname} failed...`)
+        }
+
+        // build objects
+        const subs = subs_array.map(item => {
+            return {
+                sub: item
+            }
+        })
+        const hosts = hosts_array.map(item => {
+            return {
+                hostname: item
+            }
+        })
+        const panels = panels_array.map(item => {
+            return {
+                panel: item
+            }
+        })
+
+        // combine json
+        const result = {
+            subs: subs,
+            hosts: hosts,
+            panels: panels
+        }
+
+        res.json(result)
     }
 )
 

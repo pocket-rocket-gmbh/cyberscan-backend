@@ -1,5 +1,6 @@
 import fs from 'fs'
 import { spawn } from 'child_process'
+import { XMLParser } from 'fast-xml-parser'
 const out = fs.openSync('./prod.log', 'a')
 const err = fs.openSync('./error.log', 'a')
 
@@ -10,7 +11,7 @@ class Report {
     getNetworkJSON() {
         return new Promise((resolve, reject) => {
             // check identifier (this.hostname) folder
-            fs.readFile(`./scans/${this.hostname}/subs.json`,
+            fs.readFile(`./scans/${this.hostname}/subs.text`,
                 'UTF-8',
                 (error, file) => {
                     if (error) {
@@ -64,29 +65,10 @@ export default {
                 [this.outputPath],
                 { shell: '/bin/bash', timeout: 5 * 60 * 1000 }
             )
-            shell.stderr.on('data', data => {
-                // if folder creation failed -> remove files
-                console.log(`shell: ${data}`)
-                let clean = spawn('rm',
-                    ['-rf', this.outputPath + '/*.txt', this.outputPath + '/*.xml'],
-                    { shell: '/bin/bash', timeout: 5 * 60 * 1000 }
-                )
-                clean.on('close', code => {
-                    if (code == 0) {
-                        fs.writeFile(
-                            this.outputPath + '/subfinder.txt',
-                            this.hostname + '\n',
-                            { flag: "a" },
-                            () => {
-                                this.startRecon()
-                            }
-                        )
-                    }
-                })
-            })
             shell.on('close', code => {
-                // start scanning
-                if (code == 0) {
+                if (code === 0) {
+                    // folder was created add subfinder file
+                    // and start scanning
                     fs.writeFile(
                         this.outputPath + '/subfinder.txt',
                         this.hostname + '\n',
@@ -95,6 +77,30 @@ export default {
                             this.startRecon()
                         }
                     )
+                } else {
+                    // if folder is already here -> remove files and rescan
+                    let clean = spawn('rm',
+                        [
+                            '-rf',
+                            this.outputPath + '/*.txt',
+                            this.outputPath + '/*.xml',
+                            this.outputPath + '/*.json'
+                        ], { shell: '/bin/bash', timeout: 5 * 60 * 1000 }
+                    )
+                    clean.on('close', code => {
+                        if (code == 0) {
+                            // folder is there, add subfinder file
+                            // and start scanning
+                            fs.writeFile(
+                                this.outputPath + '/subfinder.txt',
+                                this.hostname + '\n',
+                                { flag: "a" },
+                                () => {
+                                    this.startRecon()
+                                }
+                            )
+                        }
+                    })
                 }
             })
         }
@@ -118,6 +124,7 @@ export default {
                 stdio: ['ignore', out, err]
             })
             shell.on('close', () => {
+                console.log(`subfinder done for ${this.hostname}`)
                 this.startPortscan()
             })
         }
@@ -149,98 +156,111 @@ export default {
                 shell: '/bin/bash', timeout: 30 * 60 * 1000,
                 stdio: ['ignore', out, err]
             })
-            shell.on('close', (code) => {
+            shell.on('close', () => {
+                console.log(`nmap portscan done for ${this.hostname}`)
                 this.createActiveWebserverList()
             })
         }
 
         createActiveWebserverList() {
             // parse nmap grep output and get http responses
-            fs.readFile(this.outputPath + '/nmap_grep.txt', (error, data) => {
-                if (error) {
-                    console.warn(error)
-                    return
-                }
-                data = data.toString()
-                let webservers = []
-                let ips = []
-                this.hosts = []
-                let lines = data.split('\n')
-                for (let line of lines) {
-                    // find websites
-                    if (line.includes('/open/tcp//http')
-                        || line.includes('/open/tcp//ssl|http')) {
-                        let host_matches = line.match('Host: ([0-9\\.]+)')
-                        if (host_matches && host_matches.length > 0) {
-                            let host = host_matches[1]
-                            let ports = []
+            fs.readFile(this.outputPath + '/nmap.xml',
+                (error, data) => {
+                    if (error) {
+                        console.warn(error)
+                        return
+                    }
+                    const parser = new XMLParser({
+                        ignoreAttributes: false
+                    })
+                    const json = parser.parse(data.toString())
 
-                            let match_line = line.match('(\\d+)/open/tcp//http')
-                            if (match_line && match_line.length > 0) {
-                                ports.push(match_line[1])
-                            }
-                            let match_line_2 = line.match('(\\d+)/open/tcp//ssl\\|https')
-                            if (match_line_2 && match_line_2.length > 0) {
-                                ports.push(match_line_2[1])
+                    // cache results
+                    this.ips = []
+                    this.webservers = []
+                    this.hosts = []
+
+                    // filter ips and hosts
+                    let hosthints = [json?.nmaprun?.hosthint]
+                    if (json?.nmaprun?.hosthint.length > 0) {
+                        hosthints = json?.nmaprun?.hosthint
+                    }
+                    hosthints.forEach(hosthint => {
+                        if (hosthint) {
+                            let ip = hosthint?.address['@_addr']
+                            if (!this.ips.includes(ip)) {
+                                this.ips.push(ip)
                             }
 
-                            for (let port of ports) {
-                                if (port.includes('80')) {
-                                    webservers.push(`http://${host}:${port}`)
-                                } else {
-                                    webservers.push(`https://${host}:${port}`)
-                                }
+                            let hostname = hosthint?.hostnames?.hostname
+                            if (!this.hosts.includes(hostname['@_name'])) {
+                                this.hosts.push(hostname['@_name'])
                             }
                         }
+                    })
+
+                    // filter webserver urls
+                    let hosts = [json?.nmaprun?.host]
+                    if (json?.nmaprun?.host.length > 0) {
+                        hosts = json?.nmaprun?.host
                     }
-                    // find active hosts
-                    if (line.includes('/open/')) {
-                        let ip_matches = line.match('Host: ([0-9\\.]+)')
-                        if (ip_matches && ip_matches.length > 0) {
-                            let ip = ip_matches[1]
-                            ips.push(ip)
+                    hosts.forEach(host => {
+                        let ports = [host?.ports?.port]
+                        if (host?.ports?.port.length > 0) {
+                            ports = host?.ports?.port
                         }
-                        let host_matches = line.match('\\((.*?)\\)\t')
-                        if (host_matches && host_matches.length > 0) {
-                            let host = host_matches[1]
-                            this.hosts.push(host)
+                        ports.forEach(port => {
+                            if (port?.service['@_name'].includes('http')) {
+                                hosts.forEach(host => {
+                                    let hostnames = [host?.hostnames?.hostname]
+                                    if (host?.hostnames?.hostname.length > 0) {
+                                        hostnames = host?.hostnames?.hostname
+                                    }
+                                    hostnames.forEach(hostname => {
+                                        if (!this.webservers.includes(hostname['@_name'])) {
+                                            this.webservers.push(hostname['@_name'])
+                                        }
+                                    })
+                                })
+                            }
+                        })
+                    })
+
+                    fs.writeFile(this.outputPath + '/webservers.txt',
+                        this.webservers.join('\n'),
+                        error => {
+                            if (error) {
+                                console.warn('Cannot write webservers.txt')
+                                return
+                            }
+                            // start parallel scans
+                            this.startFastChecks()
                         }
-                    }
-                }
-                fs.writeFile(this.outputPath + '/webservers.txt',
-                    webservers.join('\n'),
-                    error => {
-                        if (error) {
-                            console.warn('Cannot write webservers.txt')
+                    )
+                    fs.writeFile(this.outputPath + '/ips.txt',
+                        this.ips.join('\n'),
+                        error => {
+                            if (error) {
+                                console.warn('Cannot write ips.txt')
+                            }
                         }
-                    }
-                )
-                fs.writeFile(this.outputPath + '/ips.txt',
-                    ips.join('\n'),
-                    error => {
-                        if (error) {
-                            console.warn('Cannot write ips.txt')
+                    )
+                    fs.writeFile(this.outputPath + '/hosts.txt',
+                        this.hosts.join('\n'),
+                        error => {
+                            if (error) {
+                                console.warn('Cannot write hosts.txt')
+                                return
+                            }
+                            // start parallel scans
+                            this.startWebserverInfos()
                         }
-                        // start parallel scans
-                        this.startWebserverInfos()
-                    }
-                )
-                fs.writeFile(this.outputPath + '/hosts.txt',
-                    this.hosts.join('\n'),
-                    error => {
-                        if (error) {
-                            console.warn('Cannot write hosts.txt')
-                        }
-                        // start parallel scans
-                        this.startWebserverInfos()
-                    }
-                )
-            })
+                    )
+                })
         }
 
         startWebserverInfos() {
             console.log(`Start webservers scanning for ${this.hostname}`)
-
             let shell = spawn('~/go/bin/httpx',
                 [
                     '-nc',
@@ -252,7 +272,7 @@ export default {
                     '-status-code',
                     '-silent',
                     '-l',
-                    this.outputPath + '/hosts.txt',
+                    this.outputPath + '/webservers.txt',
                     '-o',
                     this.outputPath + '/active_websites.txt'
                 ], {
@@ -260,7 +280,7 @@ export default {
                 stdio: ['ignore', out, err]
             })
             shell.on('close', () => {
-                this.startFastChecks()
+                console.log(`httpx scan done for ${this.hostname}`)
             })
         }
 
@@ -280,9 +300,11 @@ export default {
                 shell: '/bin/bash', timeout: 30 * 60 * 1000,
                 stdio: ['ignore', out, err]
             })
-            shell.on('close', code => {
+            shell.on('close', () => {
                 console.log(`Nikto scan done for ${this.hostname}`)
             })
+
+            console.log(`Start fast application check with nuclei for ${this.hostname}`)
             let shell_cve_fast = spawn('~/go/bin/nuclei',
                 [
                     '-nc',
@@ -297,11 +319,13 @@ export default {
                 stdio: ['ignore', out, err]
             })
             shell_cve_fast.on('close', () => {
+                console.log(`nuclei cve fast scan done for ${this.hostname}`)
                 this.startSecurityCheck()
             })
         }
 
         startSecurityCheck() {
+            console.log(`Start cve check with nuclei for ${this.hostname}`)
             let shell = spawn('~/go/bin/nuclei',
                 [
                     '-nc',
@@ -319,6 +343,7 @@ export default {
                 stdio: ['ignore', out, err]
             })
             shell.on('close', () => {
+                console.log(`nuclei cve scan done for ${this.hostname}`)
                 this.endTime = new Date()
             })
         }
