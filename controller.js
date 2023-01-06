@@ -16,9 +16,6 @@ export class Controller {
     }
     startTasks(hostname, inputCommand) {
         let task = this.findScan(hostname)
-        if (!task) {
-            return "Not found";
-        }
         switch (inputCommand) {
             case "start":
                 if (task.status == "running") {
@@ -36,7 +33,7 @@ export class Controller {
         }
         return "Done!";
     }
-    getReport(hostname) {
+    async getReport(hostname) {
         let thisScan = this.findScan(hostname)
 
         let subs_array = []
@@ -113,15 +110,12 @@ export class Controller {
 
         // read all sqlmap results from sqlmap folder
         try {
-            let file_list = fs.readdirSync(`./scans/${hostname}/sqlmap/*.csv`)
-            for (let file_path of file_list) {
-                let parsed_csv = csv(
-                    fs.readFileSync(
-                        file_path,
-                        { encoding: 'utf8', flag: 'r' }
-                    )
-                )
-                sqlmap_array.push(parsed_csv)
+            let file_list = fs.readdirSync(`./scans/${hostname}/sqlmap/`)
+            for (let filename of file_list) {
+                if (filename.endsWith(".csv")) {
+                    let parsed_csv = await this.parseCSV(`./scans/${hostname}/sqlmap/${filename}`)
+                    sqlmap_array.push(parsed_csv)
+                }
             }
         } catch (e) {
             // ignore
@@ -218,7 +212,14 @@ export class Controller {
             )
 
             // get sqlmap result
-            hostObject.sqlmap = sqlmap
+            hostObject.sqlmap = sqlmap.filter(alerts => {
+                for (let alert of alerts) {
+                    if (alert["Target URL"].indexOf(host) >= 0) {
+                        return true;
+                    }
+                }
+                return false;
+            })
 
             structured.push(hostObject)
         }
@@ -236,6 +237,20 @@ export class Controller {
             status: thisScan.status
         }
         return result;
+    }
+    async parseCSV(filePath) {
+        return new Promise(function (resolve, reject) {
+            var fetchData = [];
+            fs.createReadStream(filePath)
+                .pipe(csv())
+                .on('data', (row) => {
+                    fetchData.push(row);
+                })
+                .on('end', () => {
+                    resolve(fetchData);
+                })
+                .on('error', reject);
+        })
     }
     addStringToArray(string, array) {
         if (!array.includes(string) && string.length > 0) {

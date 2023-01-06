@@ -16,10 +16,10 @@ app.get(`/actions/:inputDomain/:inputCommand`,
 )
 
 app.get(`/reports/:inputDomain`,
-    (req, res) => {
+    async (req, res) => {
         const inputDomain = "https://" + req.params.inputDomain
         const hostname = new URL(inputDomain).hostname
-        let result = controller.getReport(hostname)
+        let result = await controller.getReport(hostname)
         res.json(result)
     }
 )
