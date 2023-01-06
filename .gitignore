@@ -4,3 +4,5 @@ node_modules/
 scans/
 error.log
 prod.log
+resume.cfg
+backup/

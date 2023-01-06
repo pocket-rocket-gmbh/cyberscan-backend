@@ -4,44 +4,6 @@ import { XMLParser } from 'fast-xml-parser'
 const out = fs.openSync('./prod.log', 'a')
 const err = fs.openSync('./error.log', 'a')
 
-class Report {
-    constructor(hostname) {
-        this.hostname = hostname.split('.').slice(-2).join('.')
-    }
-    getNetworkJSON() {
-        return new Promise((resolve, reject) => {
-            // check identifier (this.hostname) folder
-            fs.readFile(`./scans/${this.hostname}/subs.text`,
-                'UTF-8',
-                (error, file) => {
-                    if (error) {
-                        console.warn('Cannot find file', identifier)
-                        reject(false)
-                    }
-                    console.log(file)
-                    // return JSON
-                    resolve(file)
-                })
-        })
-    }
-    createNetworkJSON() {
-        return new Promise((resolve, reject) => {
-            // check identifier (this.hostname) folder
-            fs.readFile(`./scans/${this.hostname}/subs.txt`,
-                'UTF-8',
-                (error, file) => {
-                    if (error) {
-                        console.warn('Cannot find subs.txt for ', this.hostname)
-                        reject(false)
-                    }
-                    console.log(file)
-                    // return JSON
-                    resolve(file)
-                })
-        })
-    }
-}
-
 export default {
     Scan: class Scan {
         constructor(hostname) {
@@ -58,17 +20,14 @@ export default {
             this.urls = []
             this.full_urls = []
             this.webservers = []
-            this.panels = []
-            this.cve_high = []
-            this.cves = []
 
+            // track all threads
             this.childProcesses = []
 
             this.outputPath = './scans/' + hostname // folder to put the txt output in
             if (!this.hostname) {
                 console.error('No valid Url')
             }
-            this.report = new Report(this.hostname) // view reports etc
             console.log(`scan created for ${this.hostname}`)
 
             // init output folder
@@ -198,10 +157,6 @@ export default {
                     this.urls = []
                     this.full_urls = []
                     this.webservers = []
-                    this.panels = []
-                    // TODO
-                    this.cve_high = []
-                    this.cves = []
 
                     // filter ips and hosts
                     let hosthints = [json?.nmaprun?.hosthint]
@@ -212,12 +167,12 @@ export default {
                         if (hosthint) {
                             let ip = hosthint?.address['@_addr']
                             if (!this.ips.includes(ip)) {
-                                this.ips.push(ip)
+                                addToListFilterLocalhost(ip, this.ips)
                             }
 
                             let hostname = hosthint?.hostnames?.hostname
                             if (!this.hosts.includes(hostname['@_name'])) {
-                                this.hosts.push(hostname['@_name'])
+                                addToListFilterLocalhost(hostname['@_name'], this.hosts)
                             }
                         }
                     })
@@ -243,12 +198,12 @@ export default {
                                         let hostAndPort = hostname['@_name'] + ':' + port['@_portid']
                                         if (!this.webservers.includes(hostAndPort)) {
                                             this.webservers.push(hostAndPort)
-                                            // TODO: split hostname and port
                                             if (hostAndPort.includes(':80')
                                                 || hostAndPort.includes(':8080')) {
-                                                this.full_urls.push("http://" + hostAndPort)
+                                                addToListFilterLocalhost("http://" + hostAndPort, this.full_urls)
+                                                this.full_urls.push()
                                             } else {
-                                                this.full_urls.push("https://" + hostAndPort)
+                                                addToListFilterLocalhost("https://" + hostAndPort, this.full_urls)
                                             }
                                         }
                                     })
@@ -313,6 +268,8 @@ export default {
                     '-timeout',
                     '20',
                     '-silent',
+                    '-rl',
+                    '3',
                     '-l',
                     this.outputPath + '/full_urls.txt',
                     '-o',
@@ -360,6 +317,7 @@ export default {
         }
 
         startFastChecks() {
+            // deactivated
             console.log(`start security check with nikto for ${this.hostname}`)
             let shell = spawn('nikto',
                 [
@@ -388,13 +346,13 @@ export default {
                     '-tags',
                     'tech',
                     '-bs',
-                    '5',
+                    '3',
                     '-rl',
-                    '10',
+                    '1',
                     '-l',
                     this.outputPath + '/active_urls.txt',
                     '-o',
-                    this.outputPath + '/fast_infos.txt'
+                    this.outputPath + '/techs.txt'
                 ], {
                 shell: '/bin/bash', timeout: 30 * 60 * 1000,
                 stdio: ['ignore', out, err]
@@ -414,6 +372,8 @@ export default {
                     '-tags',
                     'panel',
                     '-bs',
+                    '1',
+                    '-rl',
                     '1',
                     '-l',
                     this.outputPath + '/active_urls.txt',
@@ -435,12 +395,12 @@ export default {
                 [
                     '-nc',
                     '-tags',
-                    'cve2022,cve2023',
+                    'cve2021,cve2022,cve2023',
                     '-silent',
                     '-bs',
-                    '1',
+                    '3',
                     '-rl',
-                    '10',
+                    '1',
                     '-s',
                     'high,critical',
                     '-l',
@@ -454,6 +414,7 @@ export default {
             this.childProcesses.push(shell)
             shell.on('close', () => {
                 console.log(`nuclei fast cve scan done for ${this.hostname}`)
+                this.startSQLMap()
                 this.startSecurityCheck()
             })
         }
@@ -467,9 +428,9 @@ export default {
                     'cve,sqli,rce,lfi,ssti,xss,exposure',
                     '-silent',
                     '-bs',
-                    '1',
+                    '3',
                     '-rl',
-                    '10',
+                    '1',
                     '-l',
                     this.outputPath + '/active_urls.txt',
                     '-o',
@@ -484,5 +445,38 @@ export default {
                 this.endTime = new Date()
             })
         }
+
+        startSQLMap() {
+            console.log(`start sqlmap with ${this.hostname}`)
+            let shell = spawn('sqlmap',
+                [
+                    '-m',
+                    this.outputPath + '/active_urls.txt',
+                    '--batch',
+                    '--crawl=2',
+                    '-skip-static',
+                    '--random-agent',
+                    '--banner',
+                    '-o',
+                    '--output-dir',
+                    this.outputPath + '/sqlmap/',
+                ], {
+                shell: '/bin/bash', timeout: 30 * 60 * 1000,
+                stdio: ['ignore', out, err]
+            })
+            this.childProcesses.push(shell)
+            shell.on('close', () => {
+                console.log(`sqlmap scan done for ${this.hostname}`)
+            })
+        }
+    }
+}
+
+function addToListFilterLocalhost(string, array) {
+    if (string != "localhost"
+        && string != "127.0.0.1"
+        && !string.startsWith("http://localhost")
+        && !string.startsWith("https://localhost")) {
+        array.push(string)
     }
 }

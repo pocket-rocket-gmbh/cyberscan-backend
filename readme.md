@@ -14,11 +14,17 @@ cp ../cyberscan-frontend/public/* ./public/
 ```
 
 ## Running
+Backend:
 ``` bash
 npm start
 ```
 
+Frontend Dev:
+``` bash
+npm run dev
+```
+
 ## TODO
-* [ ] API to start scans
-* [ ] Start tools in shell
-* [ ] parse and format result as json
+* [X] API to start scans
+* [X] Start tools in shell
+* [X] parse and format result and build json
