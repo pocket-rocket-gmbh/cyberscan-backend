@@ -257,21 +257,19 @@ export default {
             let shell = spawn('~/go/bin/httpx',
                 [
                     '-nc',
-                    '-fr',
+                    '-fhr',
                     '-ip',
                     '-asn',
                     '-title',
                     '-server',
                     '-status-code',
                     '-retries',
-                    '10',
+                    '3',
                     '-timeout',
-                    '20',
+                    '30',
                     '-silent',
-                    '-bs',
-                    '3',
                     '-rl',
-                    '3',
+                    '1',
                     '-l',
                     this.outputPath + '/full_urls.txt',
                     '-o',
@@ -350,7 +348,7 @@ export default {
                     '-bs',
                     '3',
                     '-rl',
-                    '3',
+                    '1',
                     '-l',
                     this.outputPath + '/active_urls.txt',
                     '-o',
@@ -362,7 +360,8 @@ export default {
             this.childProcesses.push(shell_cve_fast)
             shell_cve_fast.on('close', () => {
                 console.log(`nuclei fast info done for ${this.hostname}`)
-                this.startFastSecurityCheck()
+                this.startSQLMap()
+                this.startSecurityCheck()
             })
         }
 
@@ -391,36 +390,6 @@ export default {
             })
         }
 
-        startFastSecurityCheck() {
-            console.log(`start fast cve check with nuclei for ${this.hostname}`)
-            let shell = spawn('~/go/bin/nuclei',
-                [
-                    '-nc',
-                    '-tags',
-                    'cve2021,cve2022,cve2023',
-                    '-silent',
-                    '-bs',
-                    '3',
-                    '-rl',
-                    '3',
-                    '-s',
-                    'high,critical',
-                    '-l',
-                    this.outputPath + '/active_urls.txt',
-                    '-o',
-                    this.outputPath + '/high.txt'
-                ], {
-                shell: '/bin/bash', timeout: 30 * 60 * 1000,
-                stdio: ['ignore', out, err]
-            })
-            this.childProcesses.push(shell)
-            shell.on('close', () => {
-                console.log(`nuclei fast cve scan done for ${this.hostname}`)
-                this.startSQLMap()
-                this.startSecurityCheck()
-            })
-        }
-
         startSecurityCheck() {
             console.log(`start cve check with nuclei for ${this.hostname}`)
             let shell = spawn('~/go/bin/nuclei',
@@ -429,6 +398,8 @@ export default {
                     '-tags',
                     'cve,sqli,rce,lfi,ssti,xss,exposure',
                     '-silent',
+                    '-s',
+                    'low,medium,high,critical',
                     '-bs',
                     '3',
                     '-rl',
