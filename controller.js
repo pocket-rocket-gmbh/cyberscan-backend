@@ -6,14 +6,6 @@ export class Controller {
     constructor() {
         this.scans = [];
     }
-    findScan(hostname) {
-        for (let scan of this.scans) {
-            if (scan.hostname == hostname) {
-                return scan;
-            }
-        }
-        return false;
-    }
     startTasks(hostname, inputCommand) {
         let task = this.findScan(hostname)
         switch (inputCommand) {
@@ -36,79 +28,17 @@ export class Controller {
     async getReport(hostname) {
         let thisScan = this.findScan(hostname)
 
-        let subs_array = []
-        let hosts_array = []
-        let panels_array = []
-        let webservers_array = []
-        let techs_array = []
-        let high_array = []
-        let cves_array = []
+        let subs_array = this.readOutputTextFile(hostname, 'subfinder.txt')
+        let hosts_array = this.readOutputTextFile(hostname, 'hosts.txt')
+        let panels_array = this.readOutputTextFile(hostname, 'panels.txt')
+        let webservers_array = this.readOutputTextFile(hostname, 'active_websites.txt')
+        let techs_array = this.readOutputTextFile(hostname, 'techs.txt')
+        let high_array = this.readOutputTextFile(hostname, 'high.txt')
+        let cves_array = this.readOutputTextFile(hostname, 'cve.txt')
         let sqlmap_array = []
 
-        try {
-            subs_array = fs.readFileSync(
-                `./scans/${hostname}/subfinder.txt`,
-                { encoding: 'utf8', flag: 'r' })
-                .split("\n")
-        } catch (e) {
-            // ignore
-        }
-
-        try {
-            hosts_array = fs.readFileSync(
-                `./scans/${hostname}/hosts.txt`,
-                { encoding: 'utf8', flag: 'r' })
-                .split("\n")
-        } catch (e) {
-            // ignore
-        }
-
-        try {
-            panels_array = fs.readFileSync(
-                `./scans/${hostname}/panels.txt`,
-                { encoding: 'utf8', flag: 'r' })
-                .split("\n")
-        } catch (e) {
-            // ignore
-        }
-
-        try {
-            webservers_array = fs.readFileSync(
-                `./scans/${hostname}/active_websites.txt`,
-                { encoding: 'utf8', flag: 'r' })
-                .split("\n")
-        } catch (e) {
-            // ignore
-        }
-
-        try {
-            techs_array = fs.readFileSync(
-                `./scans/${hostname}/techs.txt`,
-                { encoding: 'utf8', flag: 'r' })
-                .split("\n")
-        } catch (e) {
-            // ignore
-        }
-
-        try {
-            high_array = fs.readFileSync(
-                `./scans/${hostname}/high.txt`,
-                { encoding: 'utf8', flag: 'r' })
-                .split("\n")
-        } catch (e) {
-            // ignore
-        }
-
-        try {
-            cves_array = fs.readFileSync(
-                `./scans/${hostname}/cve.txt`,
-                { encoding: 'utf8', flag: 'r' })
-                .split("\n")
-        } catch (e) {
-            // ignore
-        }
-
         // read all sqlmap results from sqlmap folder
+        // TODO -> function
         try {
             let file_list = fs.readdirSync(`./scans/${hostname}/sqlmap/`)
             for (let filename of file_list) {
@@ -122,117 +52,120 @@ export class Controller {
         }
 
         // build objects
-        const subs = subs_array.filter(e => e)
-        const hosts = hosts_array.filter(e => e)
-        const panels = panels_array.filter(e => e)
-        const webservers = webservers_array.filter(e => e)
-        const techs = techs_array.filter(e => e)
-        const high = high_array.filter(e => e)
-        const cves = cves_array.filter(e => e)
-        const sqlmap = sqlmap_array.filter(e => e)
+        let subs = subs_array.filter(e => e)
+        let hosts = hosts_array.filter(e => e)
+        let panels = panels_array.filter(e => e)
+        let webservers = webservers_array.filter(e => e)
+        let techs = techs_array.filter(e => e)
+        let high = high_array.filter(e => e)
+        let cves = cves_array.filter(e => e)
+        let sqlmap = sqlmap_array.filter(e => e)
 
-        // group by host
-        // find hostname
+        // group infos by host
         let structured = []
         for (let host of hosts) {
             let hostObject = {}
             hostObject.host = host
-            hostObject.titles = []
-            hostObject.servers = []
-            hostObject.networks = []
-            hostObject.ips = []
-            hostObject.urls = []
-            hostObject.techs = []
+            hostObject.webservers = []
             hostObject.panels = []
-            hostObject.high = []
-            hostObject.cves = []
+            hostObject.techs = []
+            hostObject.alerts = []
+
+            // filter output lines that dont match the hostname
+            hostObject.linesWebservers = this.filterByHost(host, webservers)
+            hostObject.linesTechs = this.filterByHost(host, techs)
+            hostObject.linesCves = this.filterByHost(host, cves)
+            hostObject.linesPanels = this.filterByHost(host, panels)
+
+            // show used technology
+            hostObject.techs = hostObject.linesTechs.map(line => {
+                return {
+                    name: this.getInfoFromIndex(line, 1),
+                    info: this.getInfoFromIndex(line, 4)
+                }
+            })
 
             // webserver infos
-            this.getInfoFromFileToArray(
-                host,
-                webservers,
-                [{
-                    index: 1,
-                    array: hostObject.titles
-                }, {
-                    index: 2,
-                    array: hostObject.servers
-                }, {
-                    index: 3,
-                    array: hostObject.networks
-                }, {
-                    index: 4,
-                    array: hostObject.ips
-                }, {
-                    index: 5,
-                    array: hostObject.urls
-                }]
-            )
+            // eg:  https://api-test.pocket-rocket.io [404] [title] [Cowboy] [AS16509, AS16509, Unknown] [54.73.26.109]
+            // index:                                   0        1      2       3                              4
+            hostObject.webservers = hostObject.linesWebservers.map(line => {
+                return {
+                    name: this.getURLfromString(line),
+                    title: this.getInfoFromIndex(line, 1),
+                    server: this.getInfoFromIndex(line, 2),
+                    network: this.getInfoFromIndex(line, 3),
+                    ip: this.getInfoFromIndex(line, 4)
+                }
+            })
 
             // panel infos
-            this.getInfoFromFileToArray(
-                host,
-                panels,
-                [{
-                    index: 1,
-                    array: hostObject.panels
-                }]
-            )
+            // eg: [2023-01-03 11:43:31] [drupal-login] [http] [info] https://sub.domain.de
+            // index: 0                     1               2   3       4
+            hostObject.panels = hostObject.linesPanels.map(line => {
+                return {
+                    name: this.getInfoFromIndex(line, 1),
+                    url: this.getURLfromString(line)
+                }
+            })
 
             // tech infos
-            this.getInfoFromFileToArray(
-                host,
-                techs,
-                [{
-                    index: 1,
-                    array: hostObject.techs,
-                    valueIndex: 4,
-                    key: 'tech'
-                }]
-            )
-
-            // cve high infos
-            this.getInfoFromFileToArray(
-                host,
-                high,
-                [{
-                    index: 1,
-                    array: hostObject.high
-                }]
-            )
-
-            // cve infos
-            this.getInfoFromFileToArray(
-                host,
-                cves,
-                [{
-                    index: 1,
-                    array: hostObject.cves
-                }]
-            )
-
-            // get sqlmap result
-            hostObject.sqlmap = sqlmap.filter(alerts => {
-                for (let alert of alerts) {
-                    if (alert["Target URL"].indexOf(host) >= 0) {
-                        return true;
-                    }
+            // eg: [2023-01-06 09:10:43] [tech-detect:google-font-api] [http] [info] https://domain.de  [nginx/1.6.0]
+            // index: 0                         1                       2       3                           4
+            hostObject.techs = hostObject.linesTechs.map(line => {
+                return {
+                    name: this.getInfoFromIndex(line, 1),
+                    url: this.getURLfromString(line),
+                    value: this.getInfoFromIndex(line, 4)
                 }
-                return false;
             })
+
+            // build alerts with sqlmap results
+            hostObject.alerts = hostObject.alerts.concat(
+                sqlmap.map(alerts => {
+                    for (let alert of alerts) {
+                        if (alert["Target URL"].indexOf(host) >= 0) {
+                            return {
+                                title: "SQL Injection",
+                                url: alert["Target URL"],
+                                severity: "high",
+                                description: `Parameter: ${alert['Parameter']}`,
+                                cve: null,
+                                detection: "SQLmap"
+                            }
+                        }
+                    }
+                })
+            )
+            
+            // add regular cves to alert list
+            hostObject.alerts = hostObject.alerts.concat(
+                hostObject.linesCves.map(line => {
+                    return {
+                        title: this.getInfoFromIndex(line, 1),
+                        url: this.getURLfromString(line),
+                        severity: this.getInfoFromIndex(line, 3),
+                        description: this.getInfoFromIndex(line, 4),
+                        cve: this.checkIfStringIsCVE(this.getInfoFromIndex(line, 1)),
+                        detection: "Nuclei"
+                    }
+                })
+            )
+
+            // filter empty alerts and detections we already have
+            hostObject.alerts = hostObject.alerts.filter(e => e)
+            // ignore this warning because sqlmap should find this
+            hostObject.alerts = hostObject.alerts.filter(e => e.detection != "error-based-sql-injection:MySQL")
 
             structured.push(hostObject)
         }
 
         // combine json
         const result = {
-            subdomains: subs,
-            hosts: hosts,
-            webservers: webservers,
-            panels: panels,
-            techs: techs,
-            high: high,
-            cves: cves,
+            countSubs: subs.length,
+            countHosts: hosts.length,
+            countWebservers: webservers.length,
+            countCVEs: cves.length,
+            countHighCVEs: high.length,
             structured: structured,
             status: thisScan.status
         }
@@ -252,21 +185,20 @@ export class Controller {
                 .on('error', reject);
         })
     }
+    findScan(hostname) {
+        for (let scan of this.scans) {
+            if (scan.hostname == hostname) {
+                return scan;
+            }
+        }
+        return false;
+    }
     addStringToArray(string, array) {
-        if (!array.includes(string) && string.length > 0) {
+        if (array && !array.includes(string) && string.length > 0) {
             array.push(string)
         }
     }
-    getInfoFromFileToArray(host, inputArray, resultIndexAndArray) {
-        // find panels that match the host
-        let matchingLines = inputArray.filter(line => {
-            if (line.includes("//" + host)) {
-                return true;
-            } else {
-                return false;
-            }
-        })
-
+    getInfoFromFileToArray(inputArray, resultIndexAndArray) {
         // get infos in line
         for (let extractObject of resultIndexAndArray) {
             for (let line of matchingLines) {
@@ -274,24 +206,62 @@ export class Controller {
                 for (let [index, match] of matches.entries()) {
                     match = match.replace('[', '').replace(']', '')
                     if (extractObject.index == index) {
-                        // this is a key value pair
-                        if (extractObject.key) {
-                            if (!extractObject.array[extractObject.key]) {
-                                extractObject.array[extractObject.key] = []
-                            }
-                            if (matches[extractObject.valueIndex]) {
-                                extractObject.array[extractObject.key].push({
-                                    key: match,
-                                    value: matches[extractObject.valueIndex].replace('[', '').replace(']', '')
-                                })
-                            }
-                        } else {
-                            // this is a simple string to array
-                            this.addStringToArray(match, extractObject.array)
-                        }
+                        // this is a simple string to array
+                        this.addStringToArray(match, extractObject.array)
                     }
                 }
             }
+        }
+    }
+    filterByHost(hostname, array) {
+        return array.filter(line => {
+            if (line.includes("//" + hostname)) {
+                return true;
+            } else {
+                return false;
+            }
+        });
+    }
+    getInfoFromIndex(line, inputIndex) {
+        let matches = line.match(/(\[.*?\])/gi)
+        if (matches.length > 0) {
+            for (let [index, match] of matches.entries()) {
+                match = match.replace('[', '').replace(']', '')
+                if (inputIndex == index) {
+                    // return the value from the index in the line output
+                    return match;
+                }
+            }
+        }
+    }
+    getURLfromString(line) {
+        let matches = line.match(/(https?:.*\/\/.*? )/gi)
+        if (matches && matches.length > 0) {
+            return matches[0].trim();
+        }
+        // match until end of line
+        matches = line.match(/(https?:.*\/\/.*)/gi)
+        if (matches && matches.length > 0) {
+            return matches[0].trim();
+        }
+        return null;
+    }
+    checkIfStringIsCVE(string) {
+        if (string.includes("CVE")) {
+            return string;
+        } else {
+            return "";
+        }
+    }
+    readOutputTextFile(hostname, textFileName) {
+        try {
+            return fs.readFileSync(
+                `./scans/${hostname}/${textFileName}`,
+                { encoding: 'utf8', flag: 'r' })
+                .split("\n")
+        } catch (e) {
+            // ignore
+            return [];
         }
     }
 }
