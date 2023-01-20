@@ -1,7 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 const app = express()
-import { Controller } from './controller.js'
+import { Controller } from './controller/controller.js'
 const controller = new Controller()
 
 app.use(cors({ origin: true }))

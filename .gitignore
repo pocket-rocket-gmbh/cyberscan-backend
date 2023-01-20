@@ -6,3 +6,4 @@ error.log
 prod.log
 resume.cfg
 backup/
+.vscode/

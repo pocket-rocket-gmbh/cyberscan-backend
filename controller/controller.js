@@ -5,28 +5,46 @@ import scanner from './scanner.js';
 export class Controller {
     constructor() {
         this.scans = [];
+        this.readDB();
+        process.on("SIGINT", (signal) => {
+            console.log(`\nProcess ${process.pid} has been interrupted`);
+            this.cleanScanStatus();
+            process.exit(0);
+        });
     }
     startTasks(hostname, inputCommand) {
-        let task = this.findScan(hostname)
+        hostname = hostname.split('.').slice(-2).join('.')
+        let taskIndex = this.scans.findIndex(scan => scan.hostname === hostname)
+        let task = this.scans[taskIndex]
         switch (inputCommand) {
             case "start":
-                if (task.status == "running") {
-                    console.log(`Scan for ${task.hostname} has already started...`)
-                    return "Task is already running...";
-                }
+                // not task found start scanner
                 if (!task) {
-                    // os command start scan
                     let scan = new scanner.Scan(hostname)
                     this.scans.push(scan)
                 }
+
+                // scan is running do nothing
+                if (task.status == "running") {
+                    console.log(`Scan for ${task.hostname} has already started...`)
+                }
+
+                // scan was aborted rescan
+                if (task.status == "aborted") {
+                    this.scans[taskIndex] = new scanner.Scan(hostname)
+                }
+
                 break;
             default:
                 break;
         }
-        return "Done!";
+        // save to disk
+        this.saveDB();
+        return '{status: "Done"}';
     }
     async getReport(hostname) {
-        let thisScan = this.findScan(hostname)
+        hostname = hostname.split('.').slice(-2).join('.')
+        let thisScan = this.scans.find(scan => scan.hostname === hostname)
 
         let subs_array = this.readOutputTextFile(hostname, 'subfinder.txt')
         let hosts_array = this.readOutputTextFile(hostname, 'hosts.txt')
@@ -93,8 +111,10 @@ export class Controller {
                     name: this.getURLfromString(line),
                     title: this.getInfoFromIndex(line, 1),
                     server: this.getInfoFromIndex(line, 2),
+                    statusCodes: this.getInfoFromIndex(line, 0),
                     network: this.getInfoFromIndex(line, 3),
-                    ip: this.getInfoFromIndex(line, 4)
+                    ip: this.getInfoFromIndex(line, 4),
+                    url: this.getURLfromString(line)
                 }
             })
 
@@ -136,7 +156,7 @@ export class Controller {
                     }
                 })
             )
-            
+
             // add regular cves to alert list
             hostObject.alerts = hostObject.alerts.concat(
                 hostObject.linesCves.map(line => {
@@ -184,14 +204,6 @@ export class Controller {
                 })
                 .on('error', reject);
         })
-    }
-    findScan(hostname) {
-        for (let scan of this.scans) {
-            if (scan.hostname == hostname) {
-                return scan;
-            }
-        }
-        return false;
     }
     addStringToArray(string, array) {
         if (array && !array.includes(string) && string.length > 0) {
@@ -263,5 +275,36 @@ export class Controller {
             // ignore
             return [];
         }
+    }
+    readDB() {
+        fs.readFile('./db.json',
+            (error, data) => {
+                if (error) {
+                    console.warn(error)
+                    return;
+                }
+                data = data.toString()
+                try {
+                    let readDB = JSON.parse(data)
+                    if (readDB.length > 0) {
+                        this.scans = readDB;
+                    }
+                } catch (e) {
+                    console.warn("DB parse error")
+                }
+            })
+    }
+    saveDB() {
+        fs.writeFileSync('./db.json',
+            JSON.stringify(this.scans),
+        )
+    }
+    cleanScanStatus() {
+        for (let scan of this.scans) {
+            if (scan.status == "running") {
+                scan.status = "aborted"
+            }
+        }
+        this.saveDB()
     }
 }

@@ -8,6 +8,11 @@ export default {
     Scan: class Scan {
         constructor(hostname) {
             this.hostname = hostname.split('.').slice(-2).join('.')
+            if (!hostname) {
+                console.error('No valid Url')
+                return;
+            }
+            
             this.status = 'created' // ['created', 'running', 'done']
             this.folder = null // folder to the scanning files
             this.startTime = null // start time
@@ -24,10 +29,7 @@ export default {
             // track all threads
             this.childProcesses = []
 
-            this.outputPath = './scans/' + hostname // folder to put the txt output in
-            if (!this.hostname) {
-                console.error('No valid Url')
-            }
+            this.outputPath = './scans/' + this.hostname // folder to put the txt output in
             console.log(`scan created for ${this.hostname}`)
 
             // init output folder
@@ -48,7 +50,7 @@ export default {
                         }
                     )
                 } else {
-                    // TODO: stop all child processes
+                    // stop all child processes
                     for (let process of this.childProcesses) {
                         process.kill()
                     }
@@ -310,6 +312,7 @@ export default {
                                 // start parallel scans
                                 this.startFastWebChecks()
                                 this.startCheckingPanels()
+                                // TODO: this.startCheckingLeaks()
                             }
                         )
                     })
@@ -336,6 +339,34 @@ export default {
             shell.on('close', () => {
                 console.log(`nikto scan done for ${this.hostname}`)
             })
+        }
+
+        startCheckingLeaks() {
+            // TODO: how to scan a big list of urls? output?
+            console.log(`start leak check with gobuster for ${this.hostname}`)
+            for (let url of this.urls) {
+                let shell_check_leaks = spawn('gobuster',
+                    [
+                        'dir',
+                        '-u',
+                        '\''+ url + '\'',
+                        '-t',
+                        '1',
+                        '-q',
+                        '-k',
+                        '-e',
+                        '-a',
+                        '\'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:108.0) Gecko/20100101 Firefox/108.0\'',
+                        '-w',
+                        './fuzzing/leaks.txt',
+                        '-o',
+                        this.outputPath + '/leaks.txt'
+                    ], {
+                    shell: '/bin/bash', timeout: 30 * 60 * 1000,
+                    stdio: ['ignore', out, err]
+                })
+                this.childProcesses.push(shell_check_leaks)
+            }
         }
 
         startFastWebChecks() {
