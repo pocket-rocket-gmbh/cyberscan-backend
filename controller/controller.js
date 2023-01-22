@@ -14,23 +14,27 @@ export class Controller {
     }
     startTasks(hostname, inputCommand) {
         hostname = hostname.split('.').slice(-2).join('.')
-        let taskIndex = this.scans.findIndex(scan => scan.hostname === hostname)
-        let task = this.scans[taskIndex]
+        let task = null
+        let taskIndex = this.findTaskIndex(hostname)
+        if (taskIndex) {
+            task = this.scans[taskIndex]
+        }
+
         switch (inputCommand) {
             case "start":
-                // not task found start scanner
+                // no task found start scanner
                 if (!task) {
                     let scan = new scanner.Scan(hostname)
                     this.scans.push(scan)
                 }
 
                 // scan is running do nothing
-                if (task.status == "running") {
+                if (task && task.status == "running") {
                     console.log(`Scan for ${task.hostname} has already started...`)
                 }
 
-                // scan was aborted rescan
-                if (task.status == "aborted") {
+                // scan was aborted -> rescan
+                if (task && (task.status == "aborted" || task.status == "created")) {
                     this.scans[taskIndex] = new scanner.Scan(hostname)
                 }
 
@@ -44,7 +48,7 @@ export class Controller {
     }
     async getReport(hostname) {
         hostname = hostname.split('.').slice(-2).join('.')
-        let thisScan = this.scans.find(scan => scan.hostname === hostname)
+        let thisScan = this.findTask(hostname)
 
         let subs_array = this.readOutputTextFile(hostname, 'subfinder.txt')
         let hosts_array = this.readOutputTextFile(hostname, 'hosts.txt')
@@ -190,6 +194,22 @@ export class Controller {
             status: thisScan.status
         }
         return result;
+    }
+    findTask(hostname) {
+        let scan = this.scans.find(scan => scan.hostname === hostname)
+        if (scan) {
+            return scan;
+        } else {
+            return {status: "not found"}
+        }
+    }
+    findTaskIndex(hostname) {
+        let taskIndex = this.scans.findIndex(scan => scan.hostname === hostname)
+        if (taskIndex) {
+            return taskIndex;
+        } else {
+            return null;
+        }
     }
     async parseCSV(filePath) {
         return new Promise(function (resolve, reject) {
