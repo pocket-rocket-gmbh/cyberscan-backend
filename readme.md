@@ -13,6 +13,15 @@ npm install
 cp ../cyberscan-frontend/public/* ./public/
 ```
 
+## Tools that needs to be installed:
+subfinder, httpx, nmap, nikto, gobuster, nuclei, sqlmap.
+
+* https://github.com/nmap/nmap
+* https://github.com/projectdiscovery
+* https://github.com/sullo/nikto
+* https://github.com/OJ/gobuster
+* https://github.com/sqlmapproject/sqlmap
+
 ## Running
 Backend:
 ``` bash
